@@ -1,7 +1,7 @@
 import os
 import sqlite3
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from dotenv import load_dotenv
 import binance_trader
 
@@ -10,27 +10,58 @@ load_dotenv()
 
 # Initialize SQLite database
 def init_db():
-    conn = sqlite3.connect('user_credentials.db')
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS credentials
+    db_path = 'user_credentials.db'
+    print(f'Using database file: {os.path.abspath(db_path)}')
+
+    try:
+        conn = sqlite3.connect('user_credentials.db')
+        c = conn.cursor()
+        c.execute('''CREATE TABLE IF NOT EXISTS credentials
                  (user_id INTEGER PRIMARY KEY, username TEXT, password TEXT)''')
-    conn.commit()
-    conn.close()
+        conn.commit()
+        conn.close()
+        print('Database initialized successfully')
+    except sqlite3.Error as e:
+        print(f'An error occcurred: {e}')
+    except Exception as e:
+        print(f"Error: {e}")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text('Welcome! Use /setcredentials to set your username and password. Use /viewusername to see your stored username')
+    #await update.message.reply_text('Welcome! Use /setcredentials to set your username and password. Use /viewusername to see your stored username')
+    # Create an inline keyboard with buttons for each command
+    keyboard = [
+        [InlineKeyboardButton("Set Credentials", callback_data='set_credentials')],
+        [InlineKeyboardButton("View Username", callback_data='view_username')],
+        [InlineKeyboardButton("Execute Trade", callback_data='execute_binance_trade')],
+        [InlineKeyboardButton("Retrieve Data", callback_data='retrieve_data')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    # Send a message with the inline keyboard
+    await update.message.reply_text(
+        'Welcome! Choose an action:',
+        reply_markup=reply_markup
+    )
 
 #username = apikey, password = secret
 async def set_credentials(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text('Please enter your username and password separated by a space.')
+    await update.callback_query.answer()  # Acknowledge the button click
+    await update.callback_query.message.reply_text('Please enter your username and password in this format: SET username password')
     context.user_data['expecting_credentials'] = True
+    print(f'context.user_data: {context.user_data}')
 
 async def handle_credentials(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text(update.message.text)
+    print("Handle credentials function called.")
     if context.user_data.get('expecting_credentials'):
+        print("Expecting credentials flag is True.")
         try:
-            username, password = update.message.text.split()
+            message_text = update.message.text[len('SET '):]
+            username, password = message_text.split()
             user_id = update.effective_user.id
             
+            print(f'Received credentials: user_id={user_id}, username={username}, password={password}')  # Debug print
+
             conn = sqlite3.connect('user_credentials.db')
             c = conn.cursor()
             c.execute("INSERT OR REPLACE INTO credentials (user_id, username, password) VALUES (?, ?, ?)",
@@ -40,13 +71,14 @@ async def handle_credentials(update: Update, context: ContextTypes.DEFAULT_TYPE)
             
             await update.message.reply_text('Credentials stored successfully!')
         except ValueError:
-            await update.message.reply_text('Invalid format. Please provide username and password separated by a space.')
+            await update.message.reply_text('Invalid format. Please provide username and password in this format: SET username password.')
         finally:
             context.user_data['expecting_credentials'] = False
     else:
         await update.message.reply_text('Use /setcredentials to set your username and password.')
 
 async def view_username(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.callback_query.answer()  # Acknowledge the button click
     user_id = update.effective_user.id
     
     conn = sqlite3.connect('user_credentials.db')
@@ -56,19 +88,20 @@ async def view_username(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     conn.close()
     
     if result:
-        await update.message.reply_text(f'Your stored username is: {result[0]}')
+        await update.callback_query.message.reply_text(f'Your stored username is: {result[0]}')
     else:
-        await update.message.reply_text('You haven\'t set your credentials yet. Use /setcredentials to do so.')
+        await update.callback_query.message.reply_text('You haven\'t set your credentials yet. Use /setcredentials to do so.')
 
 async def change_credentials(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text('What would you like to change? Reply with "username" or "password".')
+    await update.callback_query.answer()  # Acknowledge the button click
+    await update.callback_query.message.reply_text('What would you like to change? Reply with "username" or "password".')
     context.user_data['changing_credentials'] = True
     context.user_data['change_step'] = 'choose'
 
 async def handle_credential_change(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if context.user_data.get('changing_credentials'):
         user_id = update.effective_user.id
-        
+    
         if context.user_data['change_step'] == 'choose':
             choice = update.message.text.lower()
             if choice in ['username', 'password']:
@@ -98,6 +131,7 @@ async def handle_credential_change(update: Update, context: ContextTypes.DEFAULT
 
 #Binance Trading
 async def execute_binance_trade(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.callback_query.answer()  # Acknowledge the button click
     user_id = update.effective_user.id
     
     conn = sqlite3.connect('user_credentials.db')
@@ -111,12 +145,12 @@ async def execute_binance_trade(update: Update, context: ContextTypes.DEFAULT_TY
         client = binance_trader.init_binance_client(api_key, api_secret)
         
         if client:
-            await update.message.reply_text('Binance client initialized. Please enter trade details in the format: SYMBOL SIDE QUANTITY (e.g., BTCUSDT BUY 0.001)')
+            await update.callback_query.message.reply_text('Binance client initialized. Please enter trade details in the format: SYMBOL SIDE QUANTITY (e.g., BTCUSDT BUY 0.001)')
             context.user_data['expecting_trade'] = True
         else:
-            await update.message.reply_text('Failed to initialize Binance client. Please check your API key and secret.')
+            await update.callback_query.message.reply_text('Failed to initialize Binance client. Please check your API key and secret.')
     else:
-        await update.message.reply_text('You haven\'t set your credentials yet. Use /setcredentials to do so.')
+        await update.callback_query.message.reply_text('You haven\'t set your credentials yet. Use /setcredentials to do so.')
 
 async def handle_trade(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if context.user_data.get('expecting_trade'):
@@ -148,6 +182,40 @@ async def handle_trade(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     else:
         await update.message.reply_text('Use /trade to execute a Binance trade.')
 
+
+async def retrieve_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.callback_query.answer()  # Acknowledge the button click
+    await update.callback_query.message.reply_text('Please enter the symbol in this format: DATA symbol(BTCUSDT)')
+    context.user_data['expecting_symbol'] = True
+
+async def handle_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text(update.message.text)
+    print("Handling symbol function called.")
+    if context.user_data.get('expecting_symbol'):
+        print("Expecting symbol flag is True.")
+        try:
+            symbol = update.message.text[len('DATA '):]
+            data = binance_trader.get_market_data(symbol)
+            await update.message.reply_text(data)
+        except ValueError:
+            await update.message.reply_text('Invalid format. Please enter the symbol in this format: DATA symbol(BTCUSDT)')
+
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # Handle button presses
+    query = update.callback_query
+    action = query.data
+
+    if action == 'set_credentials':
+        await set_credentials(update, context)
+    elif action == 'view_username':
+        await view_username(update, context)
+    elif action == 'change_credentials':
+        await change_credentials(update, context)
+    elif action == 'execute_binance_trade':
+        await execute_binance_trade(update, context)
+    elif action == 'retrieve_data':
+        await retrieve_data(update, context)
+
 def main() -> None:
     # Initialize the database
     init_db()
@@ -157,16 +225,28 @@ def main() -> None:
 
     # Add handlers
     application.add_handler(CommandHandler("start", start))
+    '''
     application.add_handler(CommandHandler("setcredentials", set_credentials))
     application.add_handler(CommandHandler("viewusername",view_username))
-    application.add_handler(CommandHandler("changecredentials", change_credentials))
+    #application.add_handler(CommandHandler("changecredentials", change_credentials))
     application.add_handler(CommandHandler("trade", execute_binance_trade))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_trade))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_credentials))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_credential_change))
+    application.add_handler(CommandHandler("retrievedata", retrieve_data))
+    '''
+    # Register handlers with more specific conditions
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'^TRADE '), handle_trade))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'^SET '), handle_credentials))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'^CHANGE '), handle_credential_change))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'^DATA '), handle_data))
+
+    application.add_handler(CallbackQueryHandler(button_handler))
+
+    #application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_trade))
+    #application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_credentials))
+    #application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_credential_change))
 
     # Run the bot until the user presses Ctrl-C
     application.run_polling()
 
 if __name__ == '__main__':
     main()
+
