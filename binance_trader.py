@@ -1,39 +1,60 @@
-from binance.client import Client
-from binance.exceptions import BinanceAPIException
-from datetime import datetime
+from binance.spot import Spot as Client
+from binance.error import ParameterRequiredError
+from datetime import datetime,timedelta
 import requests
 
 def init_binance_client(api_key, api_secret):
     try:
         #client = Client(api_key, api_secret) for production
-        client = Client(api_key, api_secret,testnet=True)
+        client = Client(api_key, api_secret,base_url='https://testnet.binance.vision')
         return client
-    except BinanceAPIException as e:
+    except Exception as e:
         print(f"Error initializing Binance client: {e}")
         return None
 
-def execute_trade(client, symbol, side, quantity):
+def execute_limit(api_key, api_secret, symbol, side, price, quantity):
     try:
-        if side.upper() == 'BUY':
-            order = client.create_order(
-                symbol=symbol,
-                side=Client.SIDE_BUY,
-                type=Client.ORDER_TYPE_MARKET,
-                quantity=quantity
-            )
-        elif side.upper() == 'SELL':
-            order = client.create_order(
-                symbol=symbol,
-                side=Client.SIDE_SELL,
-                type=Client.ORDER_TYPE_MARKET,
-                quantity=quantity
-            )
+        client = Client(api_key, api_secret,base_url='https://testnet.binance.vision')
+        if client:
+            params = {
+                    'symbol': symbol,
+                    'side': side.upper(),
+                    'type': 'LIMIT',
+                    'quantity' : quantity,
+                    'price': price
+                    }
+            print(params)
+            response = client.new_order(**params)
+            return response
         else:
-            return "Invalid side. Use 'BUY' or 'SELL'."
+            return('Failed to initialize Binance client. Please check your API key and secret.')
+
 
         return f"Order executed successfully: {order}"
-    except BinanceAPIException as e:
+    except Exception as e:
         return f"Error executing trade: {e}"
+
+def execute_market(api_key, api_secret, symbol, side, quantity):
+    try:
+        client = Client(api_key, api_secret,base_url='https://testnet.binance.vision')
+        if client:
+            params = {
+                    'symbol': symbol,
+                    'side': side.upper(),
+                    'type': 'MARKET',
+                    'quantity' : quantity,
+                    }
+            print(params)
+            response = client.new_order(**params)
+            return response
+        else:
+            return('Failed to initialize Binance client. Please check your API key and secret.')
+
+
+        return f"Order executed successfully: {order}"
+    except Exception as e:
+        return f"Error executing trade: {e}"
+
 
 # Add more functions for other Binance operations as needed
 
@@ -70,3 +91,68 @@ def get_market_data(symbol):
                 f"\nTop {limit} Asks: \n{asks_str}")
     except requests.exceptions.RequestException as e:
         return f"Error fetching market data: {e}"
+
+def get_balance(api_key, api_secret):
+    try:
+        client = Client(api_key, api_secret,base_url='https://testnet.binance.vision')
+        print("get blanace, client ok")
+        if client:
+            info = client.account()
+            balances = info['balances']
+
+            messages = []
+            current_message = ''
+            for balance in balances:
+                asset = balance['asset']
+                free_balance = float(balance['free'])
+                locked_balance = float(balance['locked'])
+
+                if free_balance > 0 or locked_balance > 0:
+                    balance_line = f"Asset: {asset}, Free: {free_balance:.2f}, Locked: {locked_balance:.2f}\n"
+        
+                if len(current_message) + len(balance_line) > 4096:
+                    messages.append(current_message.strip())  # Add the current chunk to the list
+                    current_message = balance_line  # Start a new message with the current line
+                else:
+                    # Otherwise, add the line to the current message
+                    current_message += balance_line
+                
+             # Append the last accumulated message (if any)
+            if current_message:
+                messages.append(current_message.strip())
+            return messages
+
+            if len(messages) == 0:
+                return('No balance in account.')
+
+        else:
+            return('Failed to initialize Binance client. Please check your API key and secret.')
+        
+    except Exception as e:
+        return f"Failed to retrieve balance: {str(e)}"
+
+def get_margin(api_key, api_secret):
+    current_time = datetime.now()
+    date_30_days_ago = current_time - timedelta(days=30)
+
+    current_time = int(current_time.timestamp()*1000)
+    date_30_days_ago = int(date_30_days_ago.timestamp()*1000)
+    params = {
+        'asset' : 'USDT',
+        'size' : 90,
+        'startTime' : date_30_days_ago,
+        'endTime' : current_time,
+        'recvWindow': 20000,
+        "timestamp": current_time
+    }
+
+    try:
+        client = Client(api_key, api_secret)
+        if client:
+            response = client.margin_interest_rate_history(**params)
+            return response[:3]
+        else:
+            return f"where tf is the client"
+
+    except Exception as e:
+        return f"error {e}"

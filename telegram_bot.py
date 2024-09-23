@@ -33,7 +33,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         [InlineKeyboardButton("Set Credentials", callback_data='set_credentials')],
         [InlineKeyboardButton("View Username", callback_data='view_username')],
         [InlineKeyboardButton("Execute Trade", callback_data='execute_binance_trade')],
-        [InlineKeyboardButton("Retrieve Data", callback_data='retrieve_data')]
+        [InlineKeyboardButton("Retrieve Balances", callback_data='retrieve_balance')],
+        [InlineKeyboardButton("Retrieve Data", callback_data='retrieve_data')],
+        [InlineKeyboardButton("USDT Margin History", callback_data='margin_history')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -145,7 +147,7 @@ async def execute_binance_trade(update: Update, context: ContextTypes.DEFAULT_TY
         client = binance_trader.init_binance_client(api_key, api_secret)
         
         if client:
-            await update.callback_query.message.reply_text('Binance client initialized. Please enter trade details in the format: SYMBOL SIDE QUANTITY (e.g., BTCUSDT BUY 0.001)')
+            await update.callback_query.message.reply_text('Binance client initialized. Please enter trade details in the format: TRADE LAYER ORDERTYPE SYMBOL SIDE MAXPRICE MINPRICE MARGIN% QUANTITY (e.g., TRADE LAYER LIMIT BTCUSDT BUY 63000 62000 10 20000) or TRADE ORDERTYPE SYMBOL SIDE PRICE QUANTITY (e.g., TRADE LIMIT BTCUSDT BUY 65000 0.001) or TRADE ORDERTYPE SYMBOL SIDE QUANTITY (e.g., TRADE MARKET BTCUSDT BUY 0.01)')
             context.user_data['expecting_trade'] = True
         else:
             await update.callback_query.message.reply_text('Failed to initialize Binance client. Please check your API key and secret.')
@@ -155,8 +157,41 @@ async def execute_binance_trade(update: Update, context: ContextTypes.DEFAULT_TY
 async def handle_trade(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if context.user_data.get('expecting_trade'):
         try:
-            symbol, side, quantity = update.message.text.split()
+            if update.message.text[:11]=='TRADE LIMIT':
+                order='LIMIT'
+                message_text = update.message.text[len('TRADE LIMIT '):]
+                symbol, side, price, quantity = message_text.split()
             
+            elif update.message.text[:17] =='TRADE LAYER LIMIT':
+                order='LIMIT'
+                message_text = update.message.text[len('TRADE LAYER LIMIT'):]
+                symbol, side, maxprice, minprice, marginpercent, quantity = message_text.split()
+                marginpercent = marginpercent / 100
+                prices = []
+                if side == 'BUY':
+                    prices.append(maxprice)
+                    price = maxprice
+                    while price > minprice:
+                        price = price - price * marginpercent
+                        if price > minprice:
+                            prices.append(price)
+                        else:
+                            prices.append(minprice)
+                            break
+                elif side == 'SELL':
+                    prices.append(minprice)
+                    price = minprice - minprice * marginpercent
+                    if price < maxprice:
+                        prices.append(price)
+                        minprice = price
+                    else:
+                        prices.append(maxprice)
+
+            elif update.message.text[:12]=='TRADE MARKET':
+                order='MARKET'
+                message_text = update.message.text[len('TRADE MARKET '):]
+                symbol, side, quantity = message_text.split()
+
             user_id = update.effective_user.id
             conn = sqlite3.connect('user_credentials.db')
             c = conn.cursor()
@@ -169,18 +204,21 @@ async def handle_trade(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 client = binance_trader.init_binance_client(api_key, api_secret)
                 
                 if client:
-                    trade_result = binance_trader.execute_trade(client, symbol, side, quantity)
+                    if order=='LIMIT':
+                        trade_result = binance_trader.execute_limit(api_key, api_secret, symbol, side, price, quantity)
+                    elif order=='MARKET':
+                        trade_result = binance_trader.execute_market(api_key, api_secret, symbol, side, quantity)
                     await update.message.reply_text(trade_result)
                 else:
                     await update.message.reply_text('Failed to initialize Binance client. Please check your API key and secret.')
             else:
                 await update.message.reply_text('You haven\'t set your credentials yet. Use /setcredentials to do so.')
         except ValueError:
-            await update.message.reply_text('Invalid format. Please provide SYMBOL SIDE QUANTITY (e.g., BTCUSDT BUY 0.001)')
+            await update.message.reply_text('Invalid format. Please provide TRADE LAYER ORDERTYPE SYMBOL SIDE MAXPRICE MINPRICE MARGIN% QUANTITY (e.g., TRADE LAYER LIMIT BTCUSDT BUY 63000 62000 10 20000) or TRADE ORDERTYPE SYMBOL SIDE PRICE QUANTITY (e.g., TRADE LIMIT BTCUSDT BUY 65000 0.001) or TRADE ORDERTYPE SYMBOL SIDE QUANTITY (e.g., TRADE MARKET BTCUSDT BUY 0.01)')
         finally:
             context.user_data['expecting_trade'] = False
     else:
-        await update.message.reply_text('Use /trade to execute a Binance trade.')
+        await update.message.reply_text('Click \'Execute Trade\' to execute a Binance trade.')
 
 
 async def retrieve_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -200,6 +238,54 @@ async def handle_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         except ValueError:
             await update.message.reply_text('Invalid format. Please enter the symbol in this format: DATA symbol(BTCUSDT)')
 
+async def retrieve_balance(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.callback_query.answer()  # Acknowledge the button click
+    try:
+        user_id = update.effective_user.id
+
+        conn = sqlite3.connect('user_credentials.db')
+        c = conn.cursor()
+        c.execute("SELECT username, password FROM credentials WHERE user_id = ?", (user_id,)) #username = apikey, password = secret
+        result = c.fetchone()
+        conn.close()
+
+        if result:
+            api_key, api_secret = result
+            client = binance_trader.init_binance_client(api_key, api_secret)
+
+            if client:
+                data = binance_trader.get_balance(api_key, api_secret)
+                for message in data:
+                    await update.callback_query.message.reply_text(message)
+            else:
+                await update.callback_query.message.reply_text('Failed to initialize Binance client. Please check your API key and secret.')
+        else:
+            await update.callback_query.message.reply_text('You haven\'t set your credentials yet. Use /setcredentials to do so.')
+    except Exception as e:
+        await update.callback_query.message.reply_text(f'An error occurred: {str(e)}')
+
+async def margin_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+
+    await update.callback_query.answer() #Acknowledge the button click
+
+    try:
+        user_id = update.effective_user.id
+        conn = sqlite3.connect('user_credentials.db')
+        c = conn.cursor()
+        c.execute("SELECT username, password FROM credentials WHERE user_id = ?", (user_id,)) #username = apikey, passw>
+        result = c.fetchone()
+        conn.close()
+	
+        if result:
+            api_key, api_secret = result
+            data = binance_trader.get_margin(api_key, api_secret)
+            await update.callback_query.message.reply_text(data)
+        else:
+            await update.callback_query.mesasge.reply_text("smth is wrong")
+    except Exception as e:
+        await update.callback_query.message.reply_text(f"error :{e}")
+
+
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     # Handle button presses
     query = update.callback_query
@@ -215,6 +301,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await execute_binance_trade(update, context)
     elif action == 'retrieve_data':
         await retrieve_data(update, context)
+    elif action == 'retrieve_balance':
+        await retrieve_balance(update, context)
+    elif action == 'margin_history':
+        await margin_history(update, context)
 
 def main() -> None:
     # Initialize the database
