@@ -225,7 +225,7 @@ async def handle_trade(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                         max_orders = binance_trader.get_max_orders(symbol)
                         print(f'maximum orders for {symbol}: {max_orders}')
                         
-                        if len(prices) > max_orders:
+                        if len(prices) > int(max_orders):
                             update.message.reply_text('Number of orders exceed maximum, adjust and resubmit again')
                         else:
                             for price in prices:
@@ -367,7 +367,7 @@ async def handle_orders(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def cancel_order(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.callback_query.answer()  # Acknowledge the button click
-    await update.callback_query.message.reply_text('Please enter the type of orders to cancel in this format:\n' 'CANCEL SYMBOL ORDERID\n' '(e.g., CANCEL BTCUSDT 12345678)')
+    await update.callback_query.message.reply_text('Please enter the type of orders to cancel in this format:\n' 'CANCEL ALL or\n' 'CANCEL ALL SIDE\n' '(e.g., CANCEL ALL BUY/SELL) or\n' 'CANCEL ALL TICKER \n' '(e.g., CANCEL ALL BTCUSDT) or\n' 'CANCEL ALL TICKER SIDE \n' '(e.g., CANCEL ALL BTCUSDT BUY/SELL) or\n' 'CANCEL SYMBOL ORDERID\n' '(e.g., CANCEL BTCUSDT 12345678)')
     context.user_data['cancelling_orders'] = True
 
 async def handle_cancel_orders(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -376,8 +376,30 @@ async def handle_cancel_orders(update: Update, context: ContextTypes.DEFAULT_TYP
     if context.user_data.get('cancelling_orders'):
         print("Cancelling orders flag is True.")
         try:
-            message_text = update.message.text[len('CANCEL '):]
-            symbol, order_id = message_text.split()
+            cancel_status = ''
+            cancel_symbol = ''
+            cancel_side = ''
+            cancel_both = ''
+            if update.message.text[:10] == 'CANCEL ALL':
+                cancel_status = 'cancel'
+                if update.message.text == 'CANCEL ALL':
+                    cancel_symbol = 'all'
+
+                elif update.message.text[:11] == 'CANCEL ALL ':
+                    message_text = update.message.text[len('CANCEL ALL '):]
+                    if message_text == 'BUY' or message_text == 'SELL':
+                        cancel_side = message_text
+                        cancel_symbol = 'all'
+                    elif 'BUY' not in message_text and 'SELL' not in message_text:
+                        cancel_side = 'symbol'
+                        cancel_symbol = message_text
+                    else:
+                        cancel_both_symbol, cancel_both_side = message_text.split()
+                        cancel_both = True
+
+            else:
+                message_text = update.message.text[len('CANCEL '):]
+                symbol, order_id = message_text.split()
 
             user_id = update.effective_user.id
             conn = sqlite3.connect('user_credentials.db')
@@ -391,8 +413,26 @@ async def handle_cancel_orders(update: Update, context: ContextTypes.DEFAULT_TYP
                 client = binance_trader.init_binance_client(api_key, api_secret)
 
                 if client:
-                    cancelled_orders = binance_trader.cancel_orders(api_key, api_secret, symbol, order_id)
-                    await update.message.reply_text(cancelled_orders)
+                    if cancel_status and not cancel_both:
+                        open_orders = binance_trader.get_orders(api_key, api_secret, status = cancel_status, symbol = cancel_symbol, limit=False)   
+                        for order in open_orders:
+                            symbol = order['symbol']
+                            order_id = order['orderId']
+                            if not cancel_side or cancel_side == order['side'] or cancel_symbol == symbol:
+                                cancelled_orders = binance_trader.cancel_orders(api_key, api_secret, symbol, order_id)
+                                await update.message.reply_text(cancelled_orders)
+                    elif cancel_status and cancel_both:
+                        open_orders = binance_trader.get_orders(api_key, api_secret, status = cancel_status, symbol = cancel_both_symbol, limit=False)
+                        for order in open_orders:
+                            side = order['side']
+                            symbol = order['symbol']
+                            order_id = order['orderId']
+                            if cancel_both_side == side:
+                                cancelled_orders = binance_trader.cancel_orders(api_key, api_secret, symbol, order_id)
+                                await update.message.reply_text(cancelled_orders)
+                    else:
+                        cancelled_orders = binance_trader.cancel_orders(api_key, api_secret, symbol, order_id)
+                        await update.message.reply_text(cancelled_orders)
 
                 else:
                     await update.message.reply_text('Failed to initialize Binance client. Please check your API key and secret.')
@@ -400,7 +440,7 @@ async def handle_cancel_orders(update: Update, context: ContextTypes.DEFAULT_TYP
                 await update.message.reply_text('You haven\'t set your credentials yet. Click on Set Credentials to do so.')
 
         except ValueError:
-            await update.message.reply_text('Invalid format. Please enter the type of orders to cancel in this format:\n' 'CANCEL SYMBOL ORDERID\n' '(e.g., CANCEL BTCUSDT 12345678)')
+            await update.message.reply_text('Invalid format. Please enter the type of orders to cancel in this format:\n' 'CANCEL ALL or\n' 'CANCEL ALL SIDE\n' '(e.g., CANCEL ALL BUY/SELL) or\n' 'CANCEL ALL TICKER \n' '(e.g., CANCEL ALL BTCUSDT) or\n' 'CANCEL ALL TICKER SIDE\n' '(e.g., CANCEL ALL BTCUSDT BUY/SELL) or\n' 'CANCEL SYMBOL ORDERID\n' '(e.g., CANCEL BTCUSDT 12345678)')
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     # Handle button presses

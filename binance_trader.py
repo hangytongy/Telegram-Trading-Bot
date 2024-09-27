@@ -228,6 +228,15 @@ def get_orders(api_key, api_secret, status, symbol, limit=False):
                     return messages
                 else:
                     return False
+
+            elif status == 'cancel':
+                if symbol  == 'all':
+                    orders = client.get_open_orders()
+                    return orders
+                     
+                else:
+                    orders = client.get_open_orders(symbol=symbol)
+                    return orders
         else:
             return ('Failed to initialize Binance client. Please check your API key and secret.')
     except Exception as e:
