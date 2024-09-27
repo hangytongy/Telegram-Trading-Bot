@@ -12,7 +12,7 @@ def init_binance_client(api_key, api_secret):
         print(f"Error initializing Binance client: {e}")
         return None
 
-def execute_limit(api_key, api_secret, symbol, side, price, quantity):
+def execute_limit(api_key, api_secret, symbol, side, time_in_force, price, quantity):
     try:
         client = Client(api_key, api_secret,base_url='https://testnet.binance.vision')
         if client:
@@ -20,12 +20,16 @@ def execute_limit(api_key, api_secret, symbol, side, price, quantity):
                     'symbol': symbol,
                     'side': side.upper(),
                     'type': 'LIMIT',
+                    'timeInForce' : time_in_force,
                     'quantity' : quantity,
                     'price': price
                     }
             print(params)
             response = client.new_order(**params)
-            return response
+            return (f"Order {response['orderId']} submitted to {response['side']} {response['origQty']} {response['symbol']}\n"
+                    f"Price: {response['price']}\n"
+                    f"Status: {response['status']}\n"
+                    f"Executed quantity: {response['executedQty']}") 
         else:
             return('Failed to initialize Binance client. Please check your API key and secret.')
 
@@ -46,7 +50,13 @@ def execute_market(api_key, api_secret, symbol, side, quantity):
                     }
             print(params)
             response = client.new_order(**params)
-            return response
+            executed = []
+            for entry in response['fills']:
+                executed.append(f"Price: {entry['price']}, Executed quantity: {entry['qty']}")
+            executed = '\n'.join(executed)
+            return (f"Order {response['orderId']} submitted to {response['side']} {response['origQty']} {response['symbol']}\n"
+                    f"Status: {response['status']}\n"
+                    f"{executed}")
         else:
             return('Failed to initialize Binance client. Please check your API key and secret.')
 
@@ -120,11 +130,11 @@ def get_balance(api_key, api_secret):
              # Append the last accumulated message (if any)
             if current_message:
                 messages.append(current_message.strip())
-            return messages
 
             if len(messages) == 0:
-                return('No balance in account.')
-
+                return False
+            else:
+                return messages
         else:
             return('Failed to initialize Binance client. Please check your API key and secret.')
         
@@ -152,7 +162,88 @@ def get_margin(api_key, api_secret):
             response = client.margin_interest_rate_history(**params)
             return response[:3]
         else:
-            return f"where tf is the client"
+            return ('Failed to initialize Binance client. Please check your API key and secret.')
 
     except Exception as e:
-        return f"error {e}"
+        return f"An error occurred: {e}"
+
+
+def get_max_orders(symbol):
+    base_url = 'https://api.binance.com'
+    endpoint = '/api/v3/exchangeInfo'
+    params = {'symbol': symbol}
+
+    try:
+        response = requests.get(base_url + endpoint, params=params)
+        response.raise_for_status()  # Raise an exception for HTTP errors
+
+        data = response.json()['symbols'][0]['filters']
+        max_orders = data[7]['maxNumOrders']
+
+        return max_orders
+    except requests.exceptions.RequestException as e:
+        return f"Error fetching maximum number of orders: {e}"
+
+def get_orders(api_key, api_secret, status, symbol, limit=False):
+    try:
+        client=Client(api_key, api_secret,base_url='https://testnet.binance.vision')
+        print('get orders, client ok')
+        if client:
+            messages = []
+            current_message = ''
+            if status == 'outstanding':
+                orders = client.get_orders(symbol=symbol)
+                outstanding_orders = [order for order in orders if order['status'] in ['NEW', 'PARTIALLY_FILLED']]
+                if len(outstanding_orders) != 0:
+                    for order in outstanding_orders:
+                        if order['status'] == 'NEW':
+                            messages.append(f"Order {order['orderId']} submitted to {order['side']} {order['origQty']} {order['symbol']} at {order['price']} still outstanding.\n")
+                        elif order['status'] == 'PARTIALLY_FILLED':
+                            remaining = float(order['origQty']) - float(order['executedQty'])
+                            messages.append(f"Order {order['orderId']} submitted to {order['side']} {order['origQty']} {order['symbol']} at {order['price']}, {order['executedQty']} quantity executed with {remaining} remaining.\n")    
+
+                    return messages
+                else:
+                    return False
+
+            elif status == 'executed':
+                orders = client.get_orders(symbol=symbol, limit = int(limit))
+                executed_orders = [order for order in orders if order['status'] in ['FILLED']]
+                if len(executed_orders) != 0:
+                    current_message += f'Past {limit} orders executed:\n'
+                    for order in executed_orders:
+                        executed_time = datetime.fromtimestamp(order['updateTime']/1000)
+                        if order['type'] == 'MARKET':
+                            line = f"Market order {order['orderId']} submitted to {order['side']} {order['origQty']} {order['symbol']} executed at {executed_time} with {order['executedQty']} quantity executed.\n\n"
+                                
+                        elif order['type'] == 'LIMIT':
+                            line = f"Limit order {order['orderId']} submitted to {order['side']} {order['origQty']} {order['symbol']} at {order['price']} executed at {executed_time} with {order['executedQty']} quantity executed.\n\n"
+                        if len(current_message) + len(line) > 4096:
+                            messages.append(current_message.strip())  # Add the current chunk to the list
+                            current_message = line
+                        else:
+                            current_message += line
+                    if current_message:
+                        messages.append(current_message.strip())
+                    return messages
+                else:
+                    return False
+        else:
+            return ('Failed to initialize Binance client. Please check your API key and secret.')
+    except Exception as e:
+        return f"Failed to retrieve orders: {str(e)}"
+
+def cancel_orders(api_key, api_secret, symbol, order_id):
+    try:
+        client = Client(api_key, api_secret, base_url='https://testnet.binance.vision')
+        print('cancel orders, client ok')
+        if client:
+                response = client.cancel_order(symbol=symbol, orderId=order_id)
+                return (f"Order {response['orderId']} submitted to {response['side']} {response['origQty']} {response['symbol']}\n"
+                    f"Price: {response['price']}\n"
+                    f"Status: {response['status']}\n"
+                    f"Executed quantity: {response['executedQty']}")
+        else:
+            return ('Failed to initialize Binance client. Please check your API key and secret.')
+    except Exception as e:
+        return f"Failed to cancel order: {e}"
