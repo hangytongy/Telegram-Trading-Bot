@@ -24,7 +24,6 @@ def execute_limit(api_key, api_secret, symbol, side, time_in_force, price, quant
                     'quantity' : quantity,
                     'price': price
                     }
-            print(params)
             response = client.new_order(**params)
             return (f"Order {response['orderId']} submitted to {response['side']} {response['origQty']} {response['symbol']}\n"
                     f"Price: {response['price']}\n"
@@ -68,7 +67,7 @@ def execute_market(api_key, api_secret, symbol, side, quantity):
 
 # Add more functions for other Binance operations as needed
 
-def get_market_data(symbol):
+def get_market_data(symbol, price_only):
     base_url = 'https://api.binance.com'
     endpoint = '/api/v3/ticker/24hr'
     params = {'symbol': symbol}
@@ -84,21 +83,25 @@ def get_market_data(symbol):
 
         data = response.json()
         price = float(data['lastPrice'])
-        volume = float(data['volume'])
-        timestamp = data['closeTime']  # Milliseconds timestamp
-        timestamp_datetime = datetime.fromtimestamp(timestamp / 1000.0)  # Convert to seconds and to datetime
-        depth_data = depth_response.json()
-        bids=depth_data['bids']
-        asks=depth_data['asks']
-        bids_str = "\n".join([f"Price: {float(bid[0]):.2f}, Quantity: {float(bid[1]):.2f}" for bid in bids])
-        asks_str = "\n".join([f"Price: {float(ask[0]):.2f}, Quantity: {float(ask[1]):.2f}" for ask in asks])
+        
+        if price_only:
+            return price
+        else:
+            volume = float(data['volume'])
+            timestamp = data['closeTime']  # Milliseconds timestamp
+            timestamp_datetime = datetime.fromtimestamp(timestamp / 1000.0)  # Convert to seconds and to datetime
+            depth_data = depth_response.json()
+            bids=depth_data['bids']
+            asks=depth_data['asks']
+            bids_str = "\n".join([f"Price: {float(bid[0]):.2f}, Quantity: {float(bid[1]):.2f}" for bid in bids])
+            asks_str = "\n".join([f"Price: {float(ask[0]):.2f}, Quantity: {float(ask[1]):.2f}" for ask in asks])
 
-        return (f"Current price of {symbol}: {price:.2f}\n"
-                f"24h Volume: {volume:.2f}\n"
-                f"Order Book for {symbol}:\n"
-                f"Time: {timestamp_datetime.strftime('%Y-%m-%d %H:%M:%S')}\n"
-                f"\nTop {limit} Bids: \n{bids_str}\n"
-                f"\nTop {limit} Asks: \n{asks_str}")
+            return (f"Current price of {symbol}: {price:.2f}\n"
+                    f"24h Volume: {volume:.2f}\n"
+                    f"Order Book for {symbol}:\n"
+                    f"Time: {timestamp_datetime.strftime('%Y-%m-%d %H:%M:%S')}\n"
+                    f"\nTop {limit} Bids: \n{bids_str}\n"
+                    f"\nTop {limit} Asks: \n{asks_str}")
     except requests.exceptions.RequestException as e:
         return f"Error fetching market data: {e}"
 

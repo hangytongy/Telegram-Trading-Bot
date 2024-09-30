@@ -1,3 +1,6 @@
+import re
+import asyncio
+import time
 import os
 import sqlite3
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -34,6 +37,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         [InlineKeyboardButton("View Username", callback_data='view_username')],
         [InlineKeyboardButton("Retrieve Balances", callback_data='retrieve_balance')],
         [InlineKeyboardButton("Execute Trade", callback_data='execute_binance_trade')],
+        [InlineKeyboardButton("Execute TWAP", callback_data='execute_twap')],
         [InlineKeyboardButton("Retrieve Orders", callback_data='retrieve_orders')],
         [InlineKeyboardButton("Cancel Order", callback_data='cancel_order')],
         [InlineKeyboardButton("Retrieve Data", callback_data='retrieve_data')],
@@ -243,6 +247,95 @@ async def handle_trade(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text('Click \'Execute Trade\' to execute a Binance trade.')
 
 
+async def execute_twap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.callback_query.answer()  # Acknowledge the button click
+    user_id = update.effective_user.id
+
+    conn = sqlite3.connect('user_credentials.db')
+    c = conn.cursor()
+    c.execute("SELECT username, password FROM credentials WHERE user_id = ?", (user_id,)) #username = apikey, password = secret
+    result = c.fetchone()
+    conn.close()
+
+    if result:
+        api_key, api_secret = result
+        client = binance_trader.init_binance_client(api_key, api_secret)
+
+        if client:
+            await update.callback_query.message.reply_text('Please enter twap details in the format:\n' 'TWAP SYMBOL SIDE TIMEINFORCE TIMEFRAME(HOURS) NUMBEROFORDERS QUANTITY\n' '(e.g., TWAP BTCUSDT BUY GTC 1 10 20000)')
+            context.user_data['expecting_twap'] = True
+        else:
+            await update.callback_query.message.reply_text('Failed to initialize Binance client. Please check your API key and secret.')
+    else:
+        await update.callback_query.message.reply_text('You haven\'t set your credentials yet. Use /setcredentials to do so.')
+
+async def handle_twap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if context.user_data.get('expecting_twap'):
+        try:
+            message_text = update.message.text[len('TWAP '):]
+            symbol, side, time_in_force, timeframe, num_orders, quantity = message_text.split()
+         
+            user_id = update.effective_user.id
+            conn = sqlite3.connect('user_credentials.db')
+            c = conn.cursor()
+            c.execute("SELECT username, password FROM credentials WHERE user_id = ?", (user_id,))
+            result = c.fetchone()
+            conn.close()
+
+            if result:
+                api_key, api_secret = result
+                client = binance_trader.init_binance_client(api_key, api_secret)
+
+                if client:
+                    asyncio.create_task(run_twap(api_key, api_secret, update, symbol, side, time_in_force, float(timeframe), int(num_orders), float(quantity)))
+                else:
+                    await update.message.reply_text('Failed to initialize Binance client. Please check your API key and secret.')
+            else:
+                await update.message.reply_text('You haven\'t set your credentials yet. Click on Set Credentials to do so.')
+        except ValueError:
+            await update.message.reply_text('Invalid format. Please enter twap details in the format:\n' 'TWAP SYMBOL SIDE TIMEINFORCE TIMEFRAME(HOURS) NUMBEROFORDERS QUANTITY\n' '(e.g., TWAP BTCUSDT BUY GTC 1 10 20000)')
+
+
+async def run_twap(api_key, api_secret, update, symbol, side, time_in_force, timeframe, num_orders, quantity):
+    quantity_per_order = quantity / num_orders
+    interval_minutes = (timeframe * 60) / num_orders
+    
+    await update.message.reply_text(f"TWAP order for {symbol} started. First order will be placed in {interval_minutes} minutes.")
+
+    for i in range(int(num_orders)):
+        # Wait for the interval before placing each order, including the first one
+        await asyncio.sleep(interval_minutes * 60)  # Convert minutes to seconds
+
+        try:
+            # Get current price
+            current_price = binance_trader.get_market_data(symbol, price_only=True) 
+            # Place limit order
+            trade_result = binance_trader.execute_limit(api_key, api_secret, symbol, side, time_in_force, price=current_price, quantity=quantity_per_order)
+            await update.message.reply_text(trade_result)
+            await update.message.reply_text(f"TWAP limit order {i+1}/{num_orders} placed for {symbol}")
+            
+            # Check if the order is filled
+            order_id = re.search(r'Order (\d+)', trade_result).group(1)
+            order_filled = False
+            check_interval = min(30, interval_minutes * 60)  # Check every 30 seconds or at the next interval, whichever is sooner
+            
+            while not order_filled:
+                client = binance_trader.init_binance_client(api_key, api_secret)
+                order_status = client.get_order(symbol=symbol, orderId=order_id)
+                if order_status['status'] == 'FILLED':
+                    await update.message.reply_text(f"TWAP order {i+1}/{num_orders} filled for {symbol}")
+                    order_filled = True
+                elif order_status['status'] == 'CANCELED':
+                    await update.message.reply_text(f"TWAP order {i+1}/{num_orders} was canceled for {symbol}")
+                    break
+                await asyncio.sleep(check_interval)
+
+        except Exception as e:
+            await update.message.reply_text(f"Error placing TWAP order: {e}")
+
+    await update.message.reply_text(f"TWAP order completed for {symbol}")
+
+
 async def retrieve_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.callback_query.answer()  # Acknowledge the button click
     await update.callback_query.message.reply_text('Please enter the symbol in this format:\n' 'DATA SYMBOL\n' '(e.g., DATA BTCUSDT)')
@@ -255,7 +348,7 @@ async def handle_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         print("Expecting symbol flag is True.")
         try:
             symbol = update.message.text[len('DATA '):]
-            data = binance_trader.get_market_data(symbol)
+            data = binance_trader.get_market_data(symbol, price_only=False)
             await update.message.reply_text(data)
         except ValueError:
             await update.message.reply_text('Invalid format. Please enter the symbol in this format:\n' 'DATA SYMBOL\n' '(e.g., DATA BTCUSDT)')
@@ -465,6 +558,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await retrieve_orders(update, context)
     elif action =='cancel_order':
         await cancel_order(update, context)
+    elif action =='execute_twap':
+        await execute_twap(update, context)
 
 def main() -> None:
     # Initialize the database
@@ -489,6 +584,7 @@ def main() -> None:
     application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'^DATA '), handle_data))
     application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'^CHECK '), handle_orders))
     application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'^CANCEL '), handle_cancel_orders))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'^TWAP '), handle_twap))
     application.add_handler(CallbackQueryHandler(button_handler))
 
     #application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_trade))
