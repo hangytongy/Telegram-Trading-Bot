@@ -371,73 +371,30 @@ async def handle_twap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         except ValueError:
             await update.message.reply_text('Invalid format. Please enter twap details in the format:\n' 'TWAP Symbol Side TimeInForce Timeframe(Hour) NumOfOrders Quantity\n' '(e.g., TWAP BTCUSDT Buy GTC 1 10 0.001)')
 
-async def submit_twap_order(api_key, api_secret, update, symbol, side, time_in_force, quantity_per_order, i, num_orders):
-    try:
-        current_price = binance_trader.get_market_data(symbol, price_only=True)
-        trade_result = binance_trader.execute_limit(api_key, api_secret, symbol, side, time_in_force, price=current_price, quantity=quantity_per_order)
-        await update.message.reply_text(trade_result)
-        if trade_result:
-            await update.message.reply_text(f"TWAP limit order {i+1}/{num_orders} placed for {symbol}")
-            order_id = re.search(r'Order (\d+)', trade_result).group(1)
-            return order_id
-        else:
-            await update.message.reply_text(f"Failed to place TWAP order {i+1}/{num_orders} for {symbol}")
-            return None
-    except Exception as e:
-        await update.message.reply_text(f"Error placing TWAP order: {e}")
-        return None
-
-async def check_twap_order_fill(api_key, api_secret, update, symbol, order_id, i, num_orders, check_interval):
-    while True:
-        try:
-            client = binance_trader.init_binance_client(api_key, api_secret)
-            order_status = client.get_order(symbol=symbol, orderId=order_id)
-            if order_status['status'] == 'FILLED':
-                await update.message.reply_text(f"TWAP order {i+1}/{num_orders} filled for {symbol}")
-                return True
-            elif order_status['status'] == 'CANCELED':
-                await update.message.reply_text(f"TWAP order {i+1}/{num_orders} was canceled for {symbol}")
-                return False
-            await asyncio.sleep(check_interval)
-        except BinanceAPIException as e:
-            await update.message.reply_text(f"Error checking order status: {e}")
-            return False
-
-
 async def run_twap(api_key, api_secret, update, symbol, side, time_in_force, timeframe, num_orders, quantity):
     quantity_per_order = quantity / num_orders
     interval_minutes = (timeframe * 60) / num_orders
-    check_interval = min(30, interval_minutes * 60)  # Check every 30 seconds or at the next interval, whichever is sooner
 
-    await update.message.reply_text(f"TWAP order for {symbol} started. Orders will be placed every {interval_minutes} minutes.")
-
-    active_orders = {}
-    order_tasks = []
-
-    async def place_and_check_twap_order(i):
-        order_id = await submit_twap_order(api_key, api_secret, update, symbol, side, time_in_force, quantity_per_order, i, num_orders)
-        if order_id:
-            active_orders[order_id] = i 
-            await check_twap_order_fill(api_key, api_secret, update, symbol, order_id, i, num_orders, check_interval)
-            del active_orders[order_id]
+    await update.message.reply_text(f"TWAP order for {symbol} started. First order will be placed in {interval_minutes} minutes.")
 
     for i in range(int(num_orders)):
+        # Wait for the interval before placing each order, including the first one
         await asyncio.sleep(interval_minutes * 60)  # Convert minutes to seconds
-        print(f"Placing order {i+1} at {datetime.datetime.now()}")
-        
-        # Create a task for placing and checking the order
-        task = asyncio.create_task(place_and_check_twap_order(i))
-        order_tasks.append(task)
 
-        # Optionally, we can limit the number of concurrent orders
-        if len(active_orders) >= 10:  # Adjust this number based on your requirements
-            done, pending = await asyncio.wait(order_tasks, return_when=asyncio.FIRST_COMPLETED)
-            order_tasks = list(pending)
-
-    # Wait for all remaining tasks to complete
-    await asyncio.gather(*order_tasks)
+        try:
+            # Place market order
+            trade_result = binance_trader.execute_market(api_key, api_secret, symbol, side, quantity=quantity_per_order)
+            await update.message.reply_text(trade_result)
+            if trade_result:
+                status = re.search(r'Status: (\w+)', trade_result).group(1)
+                if status == 'FILLED':
+                    await update.message.reply_text(f"TWAP order {i+1}/{num_orders} filled for {symbol}")
+            
+        except Exception as e:
+            await update.message.reply_text(f"Error placing TWAP order: {e}")
 
     await update.message.reply_text(f"TWAP order completed for {symbol}")
+
 
 async def retrieve_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.callback_query.answer()  # Acknowledge the button click
