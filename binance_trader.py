@@ -47,7 +47,6 @@ def execute_market(api_key, api_secret, symbol, side, quantity):
                     'type': 'MARKET',
                     'quantity' : quantity,
                     }
-            print(params)
             response = client.new_order(**params)
             executed = []
             for entry in response['fills']:
@@ -108,8 +107,9 @@ def get_market_data(symbol, price_only):
 def get_balance(api_key, api_secret):
     try:
         client = Client(api_key, api_secret,base_url='https://testnet.binance.vision')
-        print("get blanace, client ok")
+        print("get blanace")
         if client:
+            print("client ok")
             info = client.account()
             balances = info['balances']
 
