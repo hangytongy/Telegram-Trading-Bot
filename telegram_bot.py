@@ -1,3 +1,4 @@
+import datetime
 import re
 import asyncio
 import time
@@ -55,7 +56,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 #username = apikey, password = secret
 async def set_credentials(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.callback_query.answer()  # Acknowledge the button click
-    await update.callback_query.message.reply_text('Please enter your username and password in this format: SET username password')
+    await update.callback_query.message.reply_text('Please enter your username and password in this format: Set Username Password')
     context.user_data['expecting_credentials'] = True
     print(f'context.user_data: {context.user_data}')
 
@@ -65,7 +66,8 @@ async def handle_credentials(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if context.user_data.get('expecting_credentials'):
         print("Expecting credentials flag is True.")
         try:
-            message_text = update.message.text[len('SET '):]
+            message_text_upper = update.message.text.upper()
+            message_text = message_text_upper[len('SET '):]
             username, password = message_text.split()
             user_id = update.effective_user.id
             
@@ -80,7 +82,7 @@ async def handle_credentials(update: Update, context: ContextTypes.DEFAULT_TYPE)
             
             await update.message.reply_text('Credentials stored successfully!')
         except ValueError:
-            await update.message.reply_text('Invalid format. Please provide username and password in this format: SET username password.')
+            await update.message.reply_text('Invalid format. Please provide username and password in this format: Set Username Password.')
         finally:
             context.user_data['expecting_credentials'] = False
     else:
@@ -154,7 +156,7 @@ async def execute_binance_trade(update: Update, context: ContextTypes.DEFAULT_TY
         client = binance_trader.init_binance_client(api_key, api_secret)
         
         if client:
-            await update.callback_query.message.reply_text('Please enter trade details in the format:\n\n' 'TRADE ORDERTYPE SYMBOL SIDE TIMEINFORCE PRICE QUANTITY\n\n' '(e.g., TRADE LIMIT BTCUSDT BUY GTC 65000 0.001)\n\n' '**OR**\n\n''TRADE ORDERTYPE SYMBOL SIDE QUANTITY\n\n' '(e.g., TRADE MARKET BTCUSDT BUY 0.01)')
+            await update.callback_query.message.reply_text('Please enter trade details in the format:\n\n' 'Trade OrderType Symbol Side TimeInForce Price Quantity\n\n' '(e.g., Trade Limit BTCUSDT Buy GTC 65000 0.001)\n\n' '**OR**\n\n''Trade OrderType Symbol Side Quantity\n\n' '(e.g., Trade Market BTCUSDT Buy 0.01)')
             context.user_data['expecting_trade'] = True
         else:
             await update.callback_query.message.reply_text('Failed to initialize Binance client. Please check your API key and secret.')
@@ -165,14 +167,15 @@ async def handle_trade(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if context.user_data.get('expecting_trade'):
         try:
             order=False
-            if update.message.text[:11]=='TRADE LIMIT':
+            message_text_upper = update.message.text.upper()
+            if message_text_upper[:11]=='TRADE LIMIT':
                 order='LIMIT'
-                message_text = update.message.text[len('TRADE LIMIT '):]
+                message_text = message_text_upper[len('TRADE LIMIT '):]
                 symbol, side, time_in_force, price, quantity = message_text.split()
 
-            elif update.message.text[:12]=='TRADE MARKET':
+            elif message_text_upper[:12]=='TRADE MARKET':
                 order='MARKET'
-                message_text = update.message.text[len('TRADE MARKET '):]
+                message_text = message_text_upper[len('TRADE MARKET '):]
                 symbol, side, quantity = message_text.split()
 
             if order:
@@ -199,9 +202,9 @@ async def handle_trade(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 else:
                     await update.message.reply_text('You haven\'t set your credentials yet. Click on Set Credentials to do so.')
             else:
-                await update.message.reply_text('Invalid format. Please enter trade details in the format:\n\n' 'TRADE ORDERTYPE SYMBOL SIDE TIMEINFORCE PRICE QUANTITY\n\n' '(e.g., TRADE LIMIT BTCUSDT BUY GTC 65000 0.001)\n\n' '**OR**\n\n''TRADE ORDERTYPE SYMBOL SIDE QUANTITY\n\n' '(e.g., TRADE MARKET BTCUSDT BUY 0.01)')    
+                await update.message.reply_text('Invalid format. Please enter trade details in the format:\n\n' 'Trade OrderType Symbol Side TimeInForce Price Quantity\n\n' '(e.g., Trade Limit BTCUSDT Buy GTC 65000 0.001)\n\n' '**OR**\n\n''Trade OrderType Symbol Side Quantity\n\n' '(e.g., Trade Market BTCUSDT Buy 0.01)')    
         except ValueError:
-            await update.message.reply_text('Invalid format. Please enter trade details in the format:\n\n' 'TRADE ORDERTYPE SYMBOL SIDE TIMEINFORCE PRICE QUANTITY\n\n' '(e.g., TRADE LIMIT BTCUSDT BUY GTC 65000 0.001)\n\n' '**OR**\n\n''TRADE ORDERTYPE SYMBOL SIDE QUANTITY\n\n' '(e.g., TRADE MARKET BTCUSDT BUY 0.01)') 
+            await update.message.reply_text('Invalid format. Please enter trade details in the format:\n\n' 'Trade OrderType Symbol Side TimeInForce Price Quantity\n\n' '(e.g., Trade Limit BTCUSDT Buy GTC 65000 0.001)\n\n' '**OR**\n\n''Trade OrderType Symbol Side Quantity\n\n' '(e.g., Trade Market BTCUSDT Buy 0.01)') 
             #finally:
             #    context.user_data['expecting_trade'] = False
     else:
@@ -222,7 +225,7 @@ async def execute_scale(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         client = binance_trader.init_binance_client(api_key, api_secret)
 
         if client:
-            await update.callback_query.message.reply_text('Please enter trade details in the format:\n' 'SCALE TOTAL SYMBOL SIDE TIMEINFORCE MAXPRICE MINPRICE NUMBEROFORDERS TOTALQUANTITY\n\n' '(e.g., SCALE TOTAL BTCUSDT BUY GTC 63000 62000 10 0.01) \n\n' '**OR**\n\n' 'SCALE INDI SYMBOL SIDE TIMEINFORCE PRICE PRICDEADJ NUMBEROFORDERS QUANTITY\n\n' '(e.g., SCALE INDI BTCUSDT BUY GTC 63000 1000 10 0.01)')
+            await update.callback_query.message.reply_text('Please enter trade details in the format:\n' 'Scale Total Symbol Side TimeInForce MaxPrice MinPrice NumOfOrders TotalQuantiyt\n\n' '(e.g., Scale Total BTCUSDT Buy GTC 63000 62000 10 0.01) \n\n' '**OR**\n\n' 'Scale Indi Symbol Side TimeInForce Price PriceAdj NumOfOrders Quantity\n\n' '(e.g., Scale Indi BTCUSDT Buy GTC 63000 1000 10 0.01)')
             context.user_data['expecting_scale'] = True
         else:
             await update.callback_query.message.reply_text('Failed to initialize Binance client. Please check your API key and secret.')
@@ -232,8 +235,9 @@ async def execute_scale(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 async def handle_scale(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if context.user_data.get('expecting_scale'):
         try:
-            if update.message.text[:11] =='SCALE TOTAL':
-                message_text = update.message.text[len('SCALE TOTAL '):]
+            message_text_upper = update.message.text.upper()
+            if message_text_upper[:11] =='SCALE TOTAL':
+                message_text = message_text_upper[len('SCALE TOTAL '):]
                 symbol, side, time_in_force, maxprice, minprice, no_of_orders, quantity = message_text.split()
                 maxprice = float(maxprice)
                 minprice = float(minprice)
@@ -265,8 +269,8 @@ async def handle_scale(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                     if maxprice not in prices:
                         prices.append(maxprice)
 
-            elif update.message.text[:10] =='SCALE INDI':
-                message_text = update.message.text[len('SCALE INDI '):]
+            elif message_text_upper[:10] =='SCALE INDI':
+                message_text = message_text_upper[len('SCALE INDI '):]
                 symbol, side, time_in_force, price, priceadj, no_of_orders, quantity = message_text.split()
                 price = float(price)
                 priceadj = float(priceadj)
@@ -310,7 +314,7 @@ async def handle_scale(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 await update.message.reply_text('You haven\'t set your credentials yet. Click on Set Credentials to do so.')
 
         except ValueError:
-                await update.message.reply_text('Invalid format. Please enter trade details in the format:\n' 'SCALE TOTAL SYMBOL SIDE TIMEINFORCE MAXPRICE MINPRICE NUMBEROFORDERS TOTALQUANTITY\n\n' '(e.g., SCALE TOTAL BTCUSDT BUY GTC 63000 62000 10 0.01) \n\n' '**OR**\n\n' 'SCALE INDI SYMBOL SIDE TIMEINFORCE PRICE PRICDEADJ NUMBEROFORDERS QUANTITY\n\n' '(e.g., SCALE INDI BTCUSDT BUY GTC 63000 1000 10 0.01)')
+                await update.message.reply_text('Invalid format. Please enter trade details in the format:\n' 'Scale Total Symbol Side TimeInForce MaxPrice MinPrice NumOfOrders TotalQuantiyt\n\n' '(e.g., Scale Total BTCUSDT Buy GTC 63000 62000 10 0.01) \n\n' '**OR**\n\n' 'Scale Indi Symbol Side TimeInForce Price PriceAdj NumOfOrders Quantity\n\n' '(e.g., Scale Indi BTCUSDT Buy GTC 63000 1000 10 0.01)')
             #finally:
             #    context.user_data['expecting_trade'] = False
     else:
@@ -333,7 +337,7 @@ async def execute_twap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         client = binance_trader.init_binance_client(api_key, api_secret)
 
         if client:
-            await update.callback_query.message.reply_text('Please enter twap details in the format:\n' 'TWAP SYMBOL SIDE TIMEINFORCE TIMEFRAME(HOURS) NUMBEROFORDERS QUANTITY\n' '(e.g., TWAP BTCUSDT BUY GTC 1 10 20000)')
+            await update.callback_query.message.reply_text('Please enter twap details in the format:\n' 'TWAP Symbol Side TimeInForce Timeframe(Hour) NumOfOrders Quantity\n' '(e.g., TWAP BTCUSDT Buy GTC 1 10 0.001)')
             context.user_data['expecting_twap'] = True
         else:
             await update.callback_query.message.reply_text('Failed to initialize Binance client. Please check your API key and secret.')
@@ -343,7 +347,8 @@ async def execute_twap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 async def handle_twap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if context.user_data.get('expecting_twap'):
         try:
-            message_text = update.message.text[len('TWAP '):]
+            message_text_upper = update.message.text.upper()
+            message_text = message_text_upper[len('TWAP '):]
             symbol, side, time_in_force, timeframe, num_orders, quantity = message_text.split()
          
             user_id = update.effective_user.id
@@ -364,52 +369,79 @@ async def handle_twap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             else:
                 await update.message.reply_text('You haven\'t set your credentials yet. Click on Set Credentials to do so.')
         except ValueError:
-            await update.message.reply_text('Invalid format. Please enter twap details in the format:\n' 'TWAP SYMBOL SIDE TIMEINFORCE TIMEFRAME(HOURS) NUMBEROFORDERS QUANTITY\n' '(e.g., TWAP BTCUSDT BUY GTC 1 10 20000)')
+            await update.message.reply_text('Invalid format. Please enter twap details in the format:\n' 'TWAP Symbol Side TimeInForce Timeframe(Hour) NumOfOrders Quantity\n' '(e.g., TWAP BTCUSDT Buy GTC 1 10 0.001)')
+
+async def submit_twap_order(api_key, api_secret, update, symbol, side, time_in_force, quantity_per_order, i, num_orders):
+    try:
+        current_price = binance_trader.get_market_data(symbol, price_only=True)
+        trade_result = binance_trader.execute_limit(api_key, api_secret, symbol, side, time_in_force, price=current_price, quantity=quantity_per_order)
+        await update.message.reply_text(trade_result)
+        if trade_result:
+            await update.message.reply_text(f"TWAP limit order {i+1}/{num_orders} placed for {symbol}")
+            order_id = re.search(r'Order (\d+)', trade_result).group(1)
+            return order_id
+        else:
+            await update.message.reply_text(f"Failed to place TWAP order {i+1}/{num_orders} for {symbol}")
+            return None
+    except Exception as e:
+        await update.message.reply_text(f"Error placing TWAP order: {e}")
+        return None
+
+async def check_twap_order_fill(api_key, api_secret, update, symbol, order_id, i, num_orders, check_interval):
+    while True:
+        try:
+            client = binance_trader.init_binance_client(api_key, api_secret)
+            order_status = client.get_order(symbol=symbol, orderId=order_id)
+            if order_status['status'] == 'FILLED':
+                await update.message.reply_text(f"TWAP order {i+1}/{num_orders} filled for {symbol}")
+                return True
+            elif order_status['status'] == 'CANCELED':
+                await update.message.reply_text(f"TWAP order {i+1}/{num_orders} was canceled for {symbol}")
+                return False
+            await asyncio.sleep(check_interval)
+        except BinanceAPIException as e:
+            await update.message.reply_text(f"Error checking order status: {e}")
+            return False
 
 
 async def run_twap(api_key, api_secret, update, symbol, side, time_in_force, timeframe, num_orders, quantity):
     quantity_per_order = quantity / num_orders
     interval_minutes = (timeframe * 60) / num_orders
-    
-    await update.message.reply_text(f"TWAP order for {symbol} started. First order will be placed in {interval_minutes} minutes.")
+    check_interval = min(30, interval_minutes * 60)  # Check every 30 seconds or at the next interval, whichever is sooner
+
+    await update.message.reply_text(f"TWAP order for {symbol} started. Orders will be placed every {interval_minutes} minutes.")
+
+    active_orders = {}
+    order_tasks = []
+
+    async def place_and_check_twap_order(i):
+        order_id = await submit_twap_order(api_key, api_secret, update, symbol, side, time_in_force, quantity_per_order, i, num_orders)
+        if order_id:
+            active_orders[order_id] = i 
+            await check_twap_order_fill(api_key, api_secret, update, symbol, order_id, i, num_orders, check_interval)
+            del active_orders[order_id]
 
     for i in range(int(num_orders)):
-        # Wait for the interval before placing each order, including the first one
         await asyncio.sleep(interval_minutes * 60)  # Convert minutes to seconds
+        print(f"Placing order {i+1} at {datetime.datetime.now()}")
+        
+        # Create a task for placing and checking the order
+        task = asyncio.create_task(place_and_check_twap_order(i))
+        order_tasks.append(task)
 
-        try:
-            # Get current price
-            current_price = binance_trader.get_market_data(symbol, price_only=True) 
-            # Place limit order
-            trade_result = binance_trader.execute_limit(api_key, api_secret, symbol, side, time_in_force, price=current_price, quantity=quantity_per_order)
-            await update.message.reply_text(trade_result)
-            await update.message.reply_text(f"TWAP limit order {i+1}/{num_orders} placed for {symbol}")
-            
-            # Check if the order is filled
-            order_id = re.search(r'Order (\d+)', trade_result).group(1)
-            order_filled = False
-            check_interval = min(30, interval_minutes * 60)  # Check every 30 seconds or at the next interval, whichever is sooner
-            
-            while not order_filled:
-                client = binance_trader.init_binance_client(api_key, api_secret)
-                order_status = client.get_order(symbol=symbol, orderId=order_id)
-                if order_status['status'] == 'FILLED':
-                    await update.message.reply_text(f"TWAP order {i+1}/{num_orders} filled for {symbol}")
-                    order_filled = True
-                elif order_status['status'] == 'CANCELED':
-                    await update.message.reply_text(f"TWAP order {i+1}/{num_orders} was canceled for {symbol}")
-                    break
-                await asyncio.sleep(check_interval)
+        # Optionally, we can limit the number of concurrent orders
+        if len(active_orders) >= 10:  # Adjust this number based on your requirements
+            done, pending = await asyncio.wait(order_tasks, return_when=asyncio.FIRST_COMPLETED)
+            order_tasks = list(pending)
 
-        except Exception as e:
-            await update.message.reply_text(f"Error placing TWAP order: {e}")
+    # Wait for all remaining tasks to complete
+    await asyncio.gather(*order_tasks)
 
     await update.message.reply_text(f"TWAP order completed for {symbol}")
 
-
 async def retrieve_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.callback_query.answer()  # Acknowledge the button click
-    await update.callback_query.message.reply_text('Please enter the symbol in this format:\n' 'DATA SYMBOL\n' '(e.g., DATA BTCUSDT)')
+    await update.callback_query.message.reply_text('Please enter the symbol in this format:\n' 'Data SYMBOL\n' '(e.g., Data BTCUSDT)')
     context.user_data['expecting_symbol'] = True
 
 async def handle_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -418,11 +450,12 @@ async def handle_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if context.user_data.get('expecting_symbol'):
         print("Expecting symbol flag is True.")
         try:
-            symbol = update.message.text[len('DATA '):]
+            message_text_upper = update.message.text.upper()
+            symbol = message_text_upper[len('DATA '):]
             data = binance_trader.get_market_data(symbol, price_only=False)
             await update.message.reply_text(data)
         except ValueError:
-            await update.message.reply_text('Invalid format. Please enter the symbol in this format:\n' 'DATA SYMBOL\n' '(e.g., DATA BTCUSDT)')
+            await update.message.reply_text('Invalid format. Please enter the symbol in this format:\n' 'Data SYMBOL\n' '(e.g., Data BTCUSDT)')
 
 async def retrieve_balance(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.callback_query.answer()  # Acknowledge the button click
@@ -478,7 +511,7 @@ async def margin_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def retrieve_orders(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.callback_query.answer()  # Acknowledge the button click
-    await update.callback_query.message.reply_text('Please enter the type of orders to retrieve in this format:\n' 'CHECK OUSTANDING/EXECUTED NUMBEROFORDERS(for executed orders only) SYMBOL\n' '(e.g., CHECK OUTSTANDING BTCUSDT) or\n' '(e.g., CHECK EXECUTED 10 BTCUSDT)')
+    await update.callback_query.message.reply_text('Please enter the type of orders to retrieve in this format:\n' 'Check Outstanding/Executed NumOfOrders(for executed orders only) Symbol\n' '(e.g., Check Outstanding BTCUSDT) or\n' '(e.g., Check Executed 10 BTCUSDT)')
     context.user_data['expecting_orders'] = True
 
 async def handle_orders(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -487,12 +520,13 @@ async def handle_orders(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if context.user_data.get('expecting_orders'):
         print("Expecting orders flag is True.")
         try:
-            if update.message.text[:18]=='CHECK OUTSTANDING ':
+            message_text_upper = update.message.text.upper()
+            if message_text_upper[:18]=='CHECK OUTSTANDING ':
                 status = 'outstanding'
-                symbol = update.message.text[len('CHECK OUTSTANDING '):]
-            elif update.message.text[:15] =='CHECK EXECUTED ':
+                symbol = message_text_upper[len('CHECK OUTSTANDING '):]
+            elif message_text_upper[:15] =='CHECK EXECUTED ':
                 status = 'executed'
-                message_text = update.message.text[len('CHECK EXECUTED '):]
+                message_text = message_text_upper[len('CHECK EXECUTED '):]
                 limit, symbol = message_text.split()
 
             user_id = update.effective_user.id
@@ -529,11 +563,11 @@ async def handle_orders(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 await update.message.reply_text('You haven\'t set your credentials yet. Click on Set Credentials to do so.')
 
         except ValueError:
-            await update.message.reply_text('Please enter the type of orders to retrieve in this format:\n' 'CHECK OUSTANDING/EXECUTED NUMBEROFORDERS(for executed orders only) SYMBOL\n' '(e.g., CHECK OUTSTANDING BTCUSDT) or\n' '(e.g., CHECK EXECUTED 10 BTCUSDT)')
+            await update.message.reply_text('Please enter the type of orders to retrieve in this format:\n' 'Check Outstanding/Executed NumOfOrders(for executed orders only) Symbol\n' '(e.g., Check Outstanding BTCUSDT) or\n' '(e.g., Check Executed 10 BTCUSDT)')
 
 async def cancel_order(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.callback_query.answer()  # Acknowledge the button click
-    await update.callback_query.message.reply_text('Please enter the type of orders to cancel in this format:\n' 'CANCEL ALL or\n' 'CANCEL ALL SIDE\n' '(e.g., CANCEL ALL BUY/SELL) or\n' 'CANCEL ALL TICKER \n' '(e.g., CANCEL ALL BTCUSDT) or\n' 'CANCEL ALL TICKER SIDE \n' '(e.g., CANCEL ALL BTCUSDT BUY/SELL) or\n' 'CANCEL SYMBOL ORDERID\n' '(e.g., CANCEL BTCUSDT 12345678)')
+    await update.callback_query.message.reply_text('Please enter the type of orders to cancel in this format:\n' 'Cancel All or\n' 'Cancel All Side\n' '(e.g., Cancel All Buy/Sell) or\n' 'Cancel All Symbol \n' '(e.g., Cancel All BTCUSDT) or\n' 'Cancel All Symbol Side \n' '(e.g., Cancel All BTCUSDT Buy/Sell) or\n' 'Cancel Symbol OrderID\n' '(e.g., Cancel BTCUSDT 12345678)')
     context.user_data['cancelling_orders'] = True
 
 async def handle_cancel_orders(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -546,13 +580,14 @@ async def handle_cancel_orders(update: Update, context: ContextTypes.DEFAULT_TYP
             cancel_symbol = ''
             cancel_side = ''
             cancel_both = ''
-            if update.message.text[:10] == 'CANCEL ALL':
+            message_text_upper = update.message.text.upper()
+            if message_text_upper[:10] == 'CANCEL ALL':
                 cancel_status = 'cancel'
-                if update.message.text == 'CANCEL ALL':
+                if message_text_upper == 'CANCEL ALL':
                     cancel_symbol = 'all'
 
-                elif update.message.text[:11] == 'CANCEL ALL ':
-                    message_text = update.message.text[len('CANCEL ALL '):]
+                elif message_text_upper[:11] == 'CANCEL ALL ':
+                    message_text = message_text_upper[len('CANCEL ALL '):]
                     if message_text == 'BUY' or message_text == 'SELL':
                         cancel_side = message_text
                         cancel_symbol = 'all'
@@ -564,7 +599,7 @@ async def handle_cancel_orders(update: Update, context: ContextTypes.DEFAULT_TYP
                         cancel_both = True
 
             else:
-                message_text = update.message.text[len('CANCEL '):]
+                message_text = message_text_upper[len('CANCEL '):]
                 symbol, order_id = message_text.split()
 
             user_id = update.effective_user.id
@@ -606,7 +641,7 @@ async def handle_cancel_orders(update: Update, context: ContextTypes.DEFAULT_TYP
                 await update.message.reply_text('You haven\'t set your credentials yet. Click on Set Credentials to do so.')
 
         except ValueError:
-            await update.message.reply_text('Invalid format. Please enter the type of orders to cancel in this format:\n' 'CANCEL ALL or\n' 'CANCEL ALL SIDE\n' '(e.g., CANCEL ALL BUY/SELL) or\n' 'CANCEL ALL TICKER \n' '(e.g., CANCEL ALL BTCUSDT) or\n' 'CANCEL ALL TICKER SIDE\n' '(e.g., CANCEL ALL BTCUSDT BUY/SELL) or\n' 'CANCEL SYMBOL ORDERID\n' '(e.g., CANCEL BTCUSDT 12345678)')
+            await update.message.reply_text('Invalid format. Please enter the type of orders to cancel in this format:\n' 'Cancel All or\n' 'Cancel All Side\n' '(e.g., Cancel All Buy/Sell) or\n' 'Cancel All Symbol \n' '(e.g., Cancel All BTCUSDT) or\n' 'Cancel All Symbol Side \n' '(e.g., Cancel All BTCUSDT Buy/Sell) or\n' 'Cancel Symbol OrderID\n' '(e.g., Cancel BTCUSDT 12345678)')
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     # Handle button presses
@@ -653,14 +688,14 @@ def main() -> None:
     application.add_handler(CommandHandler("retrievedata", retrieve_data))
     '''
     # Register handlers with more specific conditions
-    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'^TRADE '), handle_trade))
-    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'^SET '), handle_credentials))
-    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'^CHANGE '), handle_credential_change))
-    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'^DATA '), handle_data))
-    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'^CHECK '), handle_orders))
-    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'^CANCEL '), handle_cancel_orders))
-    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'^TWAP '), handle_twap))
-    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'^SCALE '), handle_scale))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'(?i)^TRADE '), handle_trade))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'(?i)^SET '), handle_credentials))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'(?i)^CHANGE '), handle_credential_change))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'(?i)^DATA '), handle_data))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'(?i)^CHECK '), handle_orders))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'(?i)^CANCEL '), handle_cancel_orders))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'(?i)^TWAP '), handle_twap))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'(?i)^SCALE '), handle_scale))
     application.add_handler(CallbackQueryHandler(button_handler))
 
     #application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_trade))
