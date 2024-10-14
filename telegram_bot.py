@@ -1,9 +1,12 @@
+import numpy as np
+from telegram.error import TimedOut
 import datetime
 import re
 import asyncio
 import time
 import os
 import sqlite3
+from telegram import Bot
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from dotenv import load_dotenv
@@ -225,7 +228,7 @@ async def execute_scale(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         client = binance_trader.init_binance_client(api_key, api_secret)
 
         if client:
-            await update.callback_query.message.reply_text('Please enter trade details in the format:\n' 'Scale Total Symbol Side TimeInForce MaxPrice MinPrice NumOfOrders TotalQuantiyt\n\n' '(e.g., Scale Total BTCUSDT Buy GTC 63000 62000 10 0.01) \n\n' '**OR**\n\n' 'Scale Indi Symbol Side TimeInForce Price PriceAdj NumOfOrders Quantity\n\n' '(e.g., Scale Indi BTCUSDT Buy GTC 63000 1000 10 0.01)')
+            await update.callback_query.message.reply_text('Please enter trade details in the format:\n' 'Scale Total Symbol Side TimeInForce MaxPrice MinPrice NumOfOrders TotalQuantity\n\n' '(e.g., Scale Total BTCUSDT Buy GTC 63000 62000 10 0.01) \n\n' '**OR**\n\n' 'Scale Indi Symbol Side TimeInForce MaxPrice MinPrice ExpFactor%(0 - 100) NumOfOrders TotalQuantity\n\n' '(e.g., Scale Indi BTCUSDT Buy GTC 63000 62000 10 10 0.01)')
             context.user_data['expecting_scale'] = True
         else:
             await update.callback_query.message.reply_text('Failed to initialize Binance client. Please check your API key and secret.')
@@ -271,21 +274,28 @@ async def handle_scale(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
             elif message_text_upper[:10] =='SCALE INDI':
                 message_text = message_text_upper[len('SCALE INDI '):]
-                symbol, side, time_in_force, price, priceadj, no_of_orders, quantity = message_text.split()
-                price = float(price)
-                priceadj = float(priceadj)
-                prices = []
-                prices.append(price)
-                while len(prices) < int(no_of_orders):
-                    if side == 'BUY':
-                        adjprice = round(price - priceadj,2)
-                        prices.append(adjprice)
-                        price = adjprice
+                symbol, side, time_in_force, maxprice, minprice, factor, no_of_orders, quantity = message_text.split()
+                if float(factor) >= 0 and float(factor) <= 100:
+                    maxprice = float(maxprice)
+                    minprice = float(minprice)
+                    factor = round(1 + (float(factor) / 100),2)
+                    quantity = float(quantity) / int(no_of_orders)
+                    # Function to create exponentially spaced orders with custom exponent
+                    def create_exponential_orders(start_price, end_price, n, exp_factor):                                       # Create an exponentially spaced sequence from 0 to 1
+                        exp_sequence = np.geomspace(1, np.e, n) - 1  # Subtract 1 to start at 0    
+                        # Apply custom exponential factor
+                        exp_sequence = exp_sequence ** exp_factor                                                               # Normalize the exponential sequence to be within the range x to y
+                        #exp_orders = start_price + exp_sequence * (end_price - start_price) / (np.e**exp_factor - 1)    
+                        exp_orders = start_price + (end_price - start_price) * exp_sequence / exp_sequence[-1]
+                        return exp_orders.tolist()
 
+                    if side == 'BUY':
+                        prices = create_exponential_orders(start_price = maxprice, end_price = minprice, n = int(no_of_orders), exp_factor = factor)
                     elif side == 'SELL':
-                        adjprice = round(price + priceadj,2)
-                        prices.append(adjprice)
-                        price = adjprice
+                        prices = create_exponential_orders(start_price = minprice, end_price = maxprice, n = int(no_of_orders), exp_factor = factor)
+
+                else:
+                    return await update.message.reply_text(f'Submitted factor % {factor} is not within range. Please submit % between 0 - 100.')
 
             user_id = update.effective_user.id
             conn = sqlite3.connect('user_credentials.db')
@@ -303,9 +313,10 @@ async def handle_scale(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                     print(f'maximum orders for {symbol}: {max_orders}')
 
                     if len(prices) > int(max_orders):
-                        update.message.reply_text('Number of orders exceed maximum, adjust and resubmit again')
+                        await update.message.reply_text('Number of orders exceed maximum, adjust and resubmit again')
                     else:
                         for price in prices:
+                            price = round(price, 2)
                             trade_result = binance_trader.execute_limit(api_key, api_secret, symbol, side, time_in_force, price, quantity)
                             await update.message.reply_text(trade_result)
                 else:
@@ -314,7 +325,7 @@ async def handle_scale(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 await update.message.reply_text('You haven\'t set your credentials yet. Click on Set Credentials to do so.')
 
         except ValueError:
-                await update.message.reply_text('Invalid format. Please enter trade details in the format:\n' 'Scale Total Symbol Side TimeInForce MaxPrice MinPrice NumOfOrders TotalQuantiyt\n\n' '(e.g., Scale Total BTCUSDT Buy GTC 63000 62000 10 0.01) \n\n' '**OR**\n\n' 'Scale Indi Symbol Side TimeInForce Price PriceAdj NumOfOrders Quantity\n\n' '(e.g., Scale Indi BTCUSDT Buy GTC 63000 1000 10 0.01)')
+                await update.message.reply_text('Invalid format. Please enter trade details in the format:\n' 'Scale Total Symbol Side TimeInForce MaxPrice MinPrice NumOfOrders TotalQuantity\n\n' '(e.g., Scale Total BTCUSDT Buy GTC 63000 62000 10 0.01) \n\n' '**OR**\n\n' 'Scale Indi Symbol Side TimeInForce MaxPrice MinPrice ExpFactor%(0 - 100) NumOfOrders TotalQuantity\n\n' '(e.g., Scale Indi BTCUSDT Buy GTC 63000 62000 10 10 0.01)')
             #finally:
             #    context.user_data['expecting_trade'] = False
     else:
@@ -468,7 +479,7 @@ async def margin_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def retrieve_orders(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.callback_query.answer()  # Acknowledge the button click
-    await update.callback_query.message.reply_text('Please enter the type of orders to retrieve in this format:\n' 'Check Outstanding/Executed NumOfOrders(for executed orders only) Symbol\n' '(e.g., Check Outstanding BTCUSDT) or\n' '(e.g., Check Executed 10 BTCUSDT)')
+    await update.callback_query.message.reply_text('Please enter the type of orders to retrieve in this format:\n' 'Check Outstanding/Executed NumOfOrders(for executed orders only) Symbol\n' '(e.g., Check Outstanding ALL) or\n'  '(e.g., Check Outstanding BTCUSDT) or\n' '(e.g., Check Executed 10 BTCUSDT)')
     context.user_data['expecting_orders'] = True
 
 async def handle_orders(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -504,7 +515,8 @@ async def handle_orders(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                             await update.message.reply_text(f'No outstanding orders for {symbol}')
                         else:
                             for message in outstanding_orders:
-                                await update.message.reply_text(message)
+                                #await update.message.reply_text(message)
+                                await retry_send_message(context.bot, update.effective_chat.id, message)
                     elif status == 'executed':
                         print(f'Limit = {limit}')
                         executed_orders = binance_trader.get_orders(api_key, api_secret, status, symbol, limit)
@@ -520,7 +532,7 @@ async def handle_orders(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 await update.message.reply_text('You haven\'t set your credentials yet. Click on Set Credentials to do so.')
 
         except ValueError:
-            await update.message.reply_text('Please enter the type of orders to retrieve in this format:\n' 'Check Outstanding/Executed NumOfOrders(for executed orders only) Symbol\n' '(e.g., Check Outstanding BTCUSDT) or\n' '(e.g., Check Executed 10 BTCUSDT)')
+            await update.message.reply_text('Please enter the type of orders to retrieve in this format:\n' 'Check Outstanding/Executed NumOfOrders(for executed orders only) Symbol\n' '(e.g., Check Outstanding ALL) or\n'  '(e.g., Check Outstanding BTCUSDT) or\n' '(e.g., Check Executed 10 BTCUSDT)')
 
 async def cancel_order(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.callback_query.answer()  # Acknowledge the button click
@@ -573,21 +585,27 @@ async def handle_cancel_orders(update: Update, context: ContextTypes.DEFAULT_TYP
                 if client:
                     if cancel_status and not cancel_both:
                         open_orders = binance_trader.get_orders(api_key, api_secret, status = cancel_status, symbol = cancel_symbol, limit=False)   
-                        for order in open_orders:
-                            symbol = order['symbol']
-                            order_id = order['orderId']
-                            if not cancel_side or cancel_side == order['side'] or cancel_symbol == symbol:
-                                cancelled_orders = binance_trader.cancel_orders(api_key, api_secret, symbol, order_id)
-                                await update.message.reply_text(cancelled_orders)
+                        if len(open_orders) == 0:
+                            await update.message.reply_text(f'No outstanding orders')
+                        else:
+                            for order in open_orders:
+                                symbol = order['symbol']
+                                order_id = order['orderId']
+                                if not cancel_side or cancel_side == order['side'] or cancel_symbol == symbol:
+                                    cancelled_orders = binance_trader.cancel_orders(api_key, api_secret, symbol, order_id)
+                                    await update.message.reply_text(cancelled_orders)
                     elif cancel_status and cancel_both:
                         open_orders = binance_trader.get_orders(api_key, api_secret, status = cancel_status, symbol = cancel_both_symbol, limit=False)
-                        for order in open_orders:
-                            side = order['side']
-                            symbol = order['symbol']
-                            order_id = order['orderId']
-                            if cancel_both_side == side:
-                                cancelled_orders = binance_trader.cancel_orders(api_key, api_secret, symbol, order_id)
-                                await update.message.reply_text(cancelled_orders)
+                        if len(open_orders) == 0:
+                            await update.message.reply_text(f'No outstanding orders')
+                        else:
+                            for order in open_orders:
+                                side = order['side']
+                                symbol = order['symbol']
+                                order_id = order['orderId']
+                                if cancel_both_side == side:
+                                    cancelled_orders = binance_trader.cancel_orders(api_key, api_secret, symbol, order_id)
+                                    await update.message.reply_text(cancelled_orders)
                     else:
                         cancelled_orders = binance_trader.cancel_orders(api_key, api_secret, symbol, order_id)
                         await update.message.reply_text(cancelled_orders)
@@ -599,6 +617,8 @@ async def handle_cancel_orders(update: Update, context: ContextTypes.DEFAULT_TYP
 
         except ValueError:
             await update.message.reply_text('Invalid format. Please enter the type of orders to cancel in this format:\n' 'Cancel All or\n' 'Cancel All Side\n' '(e.g., Cancel All Buy/Sell) or\n' 'Cancel All Symbol \n' '(e.g., Cancel All BTCUSDT) or\n' 'Cancel All Symbol Side \n' '(e.g., Cancel All BTCUSDT Buy/Sell) or\n' 'Cancel Symbol OrderID\n' '(e.g., Cancel BTCUSDT 12345678)')
+        except Exception as e:
+            await update.message.reply_text(f'An error occurred: {e}')
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     # Handle button presses
@@ -628,12 +648,27 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     elif action =='execute_scale':
         await execute_scale(update, context)
 
+async def retry_send_message(bot, chat_id, message, retries=10):
+    for attempt in range(retries):
+        try:
+            await bot.send_message(chat_id=chat_id, text=message)
+            break  # If successful, exit the loop
+        except TimedOut:
+            if attempt < retries - 1:
+                print(f"Retrying... ({attempt + 1}/{retries})")
+                await asyncio.sleep(2)  # Wait before retrying
+            else:
+                print("Max retries reached. Message could not be sent.")
+
 def main() -> None:
     # Initialize the database
     init_db()
 
+    # Initialize the Bot with the custom Request
+    bot = Bot(token=os.getenv('TELEGRAM_BOT_TOKEN'))
+
     # Create the Application and pass it your bot's token
-    application = Application.builder().token(os.getenv('TELEGRAM_BOT_TOKEN')).build()
+    application = Application.builder().bot(bot).build()
 
     # Add handlers
     application.add_handler(CommandHandler("start", start))
