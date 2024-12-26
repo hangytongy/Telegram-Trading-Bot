@@ -287,6 +287,7 @@ async def handle_stoploss(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 quantity = float(quantity) / int(no_of_orders)
                 prices = []
                 prices.append(maxprice)
+                price = maxprice
                 while price > minprice and len(prices) < (int(no_of_orders) - 1):
                     price = round(price - priceadj,2)
                     if price > minprice:
