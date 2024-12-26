@@ -239,7 +239,7 @@ async def info_scale(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     await update.callback_query.answer()  # Acknowledge the button click
     chat_id = update.effective_chat.id
     current_directory = os.getcwd()
-    exponent_directory = os.path.join(current_directory,exponentialfactor-graphics)
+    exponent_directory = os.path.join(current_directory,'exponentialfactor-graphics')
     image_paths=[f'{exponent_directory}/expfactor0.png', f'{exponent_directory}/expfactor20.png', f'{exponent_directory}/expfactor50.png', f'{exponent_directory}/expfactor70.png', f'{exponent_directory}/expfactor100.png']
     for path in image_paths:
         with open(path, 'rb') as image_file:
