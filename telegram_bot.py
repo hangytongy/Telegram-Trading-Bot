@@ -203,10 +203,10 @@ async def handle_trade(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 
                     if client:
                         if order=='LIMIT':
-                            trade_result = binance_trader.execute_limit(api_key, api_secret, symbol, side, time_in_force,  price, quantity)
+                            trade_result = await binance_trader.execute_limit(api_key, api_secret, symbol, side, time_in_force,  price, quantity)
                             await update.message.reply_text(trade_result)
                         elif order=='MARKET':
-                            trade_result = binance_trader.execute_market(api_key, api_secret, symbol, side, quantity)
+                            trade_result = await binance_trader.execute_market(api_key, api_secret, symbol, side, quantity)
                             await update.message.reply_text(trade_result)
                     else:
                         await update.message.reply_text('Failed to initialize Binance client. Please check your API key and secret.')
@@ -283,8 +283,9 @@ async def handle_scale(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 maxprice = float(maxprice)
                 minprice = float(minprice)
                 priceadj = abs(maxprice - minprice) / (int(no_of_orders) - 1)
-                quantity = float(quantity) / int(no_of_orders)
+                quantity = float(quantity) / int(no_of_orders) #qty per order
                 prices = []
+                print(symbol, side, maxprice, minprice, no_of_orders, quantity)
                 if side == 'BUY':
                     prices.append(maxprice)
                     price = maxprice
@@ -355,7 +356,7 @@ async def handle_scale(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                     else:
                         for price in prices:
                             price = round(price, 2)
-                            trade_result = binance_trader.execute_limit(api_key, api_secret, symbol, side, time_in_force, price, quantity)
+                            trade_result = await binance_trader.execute_limit(api_key, api_secret, symbol, side, time_in_force, price, quantity)
                             await update.message.reply_text(trade_result)
                 else:
                     await update.message.reply_text('Failed to initialize Binance client. Please check your API key and secret.')
@@ -410,6 +411,7 @@ async def execute_twap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 async def handle_twap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if context.user_data.get('expecting_twap'):
+        await update.message.reply_text('executing TWAP')
         try:
             twap_type = ''
             message_text_upper = update.message.text.upper()
@@ -730,7 +732,7 @@ async def retrieve_balance(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 async def margin_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
-    await update.callback_query.answer() #Acknowledge the button click
+    await update.callback_query.answer() #Acknowledge the button 
 
     try:
         user_id = update.effective_user.id
