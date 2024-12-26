@@ -70,8 +70,8 @@ async def handle_credentials(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if context.user_data.get('expecting_credentials'):
         print("Expecting credentials flag is True.")
         try:
-            message_text_upper = update.message.text.upper()
-            message_text = message_text_upper[len('SET '):]
+            message_text = update.message.text
+            message_text = message_text[len('Set '):]
             username, password = message_text.split()
             user_id = update.effective_user.id
             

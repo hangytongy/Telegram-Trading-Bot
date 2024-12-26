@@ -114,7 +114,7 @@ def get_balance(api_key, api_secret, position, display:bool):
             print("client ok")
             info = client.account()
             balances = info['balances']
-
+           
             messages = []
             current_message = ''
             spot_positions = {}
