@@ -944,13 +944,7 @@ def main() -> None:
 
     # Add handlers
     application.add_handler(CommandHandler("start", start))
-    '''
-    application.add_handler(CommandHandler("setcredentials", set_credentials))
-    application.add_handler(CommandHandler("viewusername",view_username))
-    #application.add_handler(CommandHandler("changecredentials", change_credentials))
-    application.add_handler(CommandHandler("trade", execute_binance_trade))
-    application.add_handler(CommandHandler("retrievedata", retrieve_data))
-    '''
+
     # Register handlers with more specific conditions
     application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'(?i)^TRADE '), handle_trade))
     application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'(?i)^SET '), handle_credentials))
@@ -962,9 +956,6 @@ def main() -> None:
     application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'(?i)^SCALE '), handle_scale))
     application.add_handler(CallbackQueryHandler(button_handler))
 
-    #application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_trade))
-    #application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_credentials))
-    #application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_credential_change))
 
     # Run the bot until the user presses Ctrl-C
     application.run_polling()
