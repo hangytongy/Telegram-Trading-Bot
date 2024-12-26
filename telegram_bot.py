@@ -238,7 +238,9 @@ async def handle_trade(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 async def info_scale(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.callback_query.answer()  # Acknowledge the button click
     chat_id = update.effective_chat.id
-    image_paths=['/root/Telegram-Trading-Bot-Prod/exponentialfactor-graphics/expfactor0.png', '/root/Telegram-Trading-Bot-Prod/exponentialfactor-graphics/expfactor20.png', '/root/Telegram-Trading-Bot-Prod/exponentialfactor-graphics/expfactor50.png', '/root/Telegram-Trading-Bot-Prod/exponentialfactor-graphics/expfactor70.png', '/root/Telegram-Trading-Bot-Prod/exponentialfactor-graphics/expfactor100.png']
+    current_directory = os.getcwd()
+    exponent_directory = os.path.join(current_directory,exponentialfactor-graphics)
+    image_paths=[f'{exponent_directory}/expfactor0.png', f'{exponent_directory}/expfactor20.png', f'{exponent_directory}/expfactor50.png', f'{exponent_directory}/expfactor70.png', f'{exponent_directory}/expfactor100.png']
     for path in image_paths:
         with open(path, 'rb') as image_file:
             await context.bot.send_photo(chat_id=chat_id, photo=image_file)
