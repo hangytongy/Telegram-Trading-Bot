@@ -46,6 +46,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         [InlineKeyboardButton("Execute TWAP", callback_data='execute_twap')],
         [InlineKeyboardButton("Retrieve Orders", callback_data='retrieve_orders')],
         [InlineKeyboardButton("Cancel Order", callback_data='cancel_order')],
+        [InlineKeyboardButton("Stop Loss Scale", callback_data='stop_loss')],
         [InlineKeyboardButton("Retrieve Data", callback_data='retrieve_data')],
         [InlineKeyboardButton("USDT Margin History", callback_data='margin_history')]
     ]
@@ -244,6 +245,49 @@ async def info_scale(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     for path in image_paths:
         with open(path, 'rb') as image_file:
             await context.bot.send_photo(chat_id=chat_id, photo=image_file)
+
+async def stop_loss(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.callback_query.answer()  # Acknowledge the button click
+
+    user_id = update.effective_user.id
+
+    conn = sqlite3.connect('user_credentials.db')
+    c = conn.cursor()
+    c.execute("SELECT username, password FROM credentials WHERE user_id = ?", (user_id,)) #username = apikey, password = secret
+    result = c.fetchone()
+    conn.close()
+
+    if result:
+        api_key, api_secret = result
+        client = binance_trader.init_binance_client(api_key, api_secret)
+
+        if client:
+            await update.callback_query.message.reply_text('Please enter stop loss details in the following format:\n'
+                                                           'Stop Symbol TimeInForce MaxPrice MinPrice NumOfOrders TotalQuantity\n\n'
+                                                           '\\(e\\.g\\., Stop BTCUSDT GTC 63000 62000 10 0\\.01\\) \n\n',
+                                                           parse_mode= 'MarkdownV2')
+            context.user_data['expecting_stop'] = True
+
+        else:
+            await update.callback_query.message.reply_text('Failed to initialize Binance client. Please check your API key and secret.')
+    else:
+        await update.callback_query.message.reply_text('You haven\'t set your credentials yet. Use /setcredentials to do so.')
+
+async def handle_stoploss(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if context.user_data.get('expecting_stop'):
+        try:
+            message_text_upper = update.message.text.upper()
+            if message_text_upper[:4] =='STOP':
+                await update.message.reply_text('input stop loss scale function here') #to be updated
+        except ValueError:
+            await update.message.reply_text(
+                'Invalid format. Please enter trade details in the format:\n' 
+                'Stop Symbol TimeInForce MaxPrice MinPrice NumOfOrders TotalQuantity\n\n'
+                '\\(e\\.g\\., Stop BTCUSDT GTC 63000 62000 10 0\\.01\\) \n\n',
+                parse_mode= 'MarkdownV2')
+
+    else:
+        await update.message.reply_text('Click \'Execute Stop Loss Scale\' to execute a Binance scale trade.')
 
 async def execute_scale(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.callback_query.answer()  # Acknowledge the button click
@@ -923,6 +967,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await execute_scale(update, context)
     elif action =='info_scale':
         await info_scale(update, context)
+    elif action =='stop_loss':
+        await stop_loss(update,context)
 
 async def retry_send_message(bot, chat_id, message, retries=10):
     for attempt in range(retries):
@@ -958,6 +1004,7 @@ def main() -> None:
     application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'(?i)^CANCEL '), handle_cancel_orders))
     application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'(?i)^TWAP '), handle_twap))
     application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'(?i)^SCALE '), handle_scale))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'(?i)^STOP '), handle_stoploss))
     application.add_handler(CallbackQueryHandler(button_handler))
 
 
