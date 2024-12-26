@@ -11,6 +11,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from dotenv import load_dotenv
 import binance_trader
+import binacne_trader_perps
 
 # Load environment variables
 load_dotenv()
@@ -259,12 +260,12 @@ async def stop_loss(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     if result:
         api_key, api_secret = result
-        client = binance_trader.init_binance_client(api_key, api_secret)
-
+        client = binacne_trader_perps.init_binance_client(api_key,api_secret) #need to change to perps client
+        
         if client:
             await update.callback_query.message.reply_text('Please enter stop loss details in the following format:\n'
-                                                           'Stop Symbol TimeInForce MaxPrice MinPrice NumOfOrders TotalQuantity\n\n'
-                                                           '\\(e\\.g\\., Stop BTCUSDT GTC 63000 62000 10 0\\.01\\) \n\n',
+                                                           'Stop Symbol Side TimeInForce MaxPrice MinPrice NumOfOrders TotalQuantity\n\n'
+                                                           '\\(e\\.g\\., Stop Sell BTCUSDT GTC 63000 62000 10 0\\.01\\) \n\n',
                                                            parse_mode= 'MarkdownV2')
             context.user_data['expecting_stop'] = True
 
@@ -278,7 +279,53 @@ async def handle_stoploss(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         try:
             message_text_upper = update.message.text.upper()
             if message_text_upper[:4] =='STOP':
-                await update.message.reply_text('input stop loss scale function here') #to be updated
+                message_text = message_text_upper[len('STOP '):]
+                symbol, side, time_in_force, maxprice, minprice, no_of_orders, quantity = message_text.split()
+                maxprice = float(maxprice)
+                minprice = float(minprice)
+                priceadj = abs(maxprice - minprice) / (int(no_of_orders) - 1)
+                quantity = float(quantity) / int(no_of_orders)
+                prices = []
+                prices.append(maxprice)
+                while price > minprice and len(prices) < (int(no_of_orders) - 1):
+                    price = round(price - priceadj,2)
+                    if price > minprice:
+                        prices.append(price)
+                    else:
+                        break
+                if minprice not in prices:
+                    prices.append(minprice)
+                print(f"SL prices : {prices}")
+
+            user_id = update.effective_user.id
+            conn = sqlite3.connect('user_credentials.db')
+            c = conn.cursor()
+            c.execute("SELECT username, password FROM credentials WHERE user_id = ?", (user_id,))
+            result = c.fetchone()
+            conn.close()
+
+            if result:
+                api_key, api_secret = result
+                client = binacne_trader_perps.init_binance_client(api_key,api_secret) #need to change to perps client
+
+                if client:
+                    pass
+                    #get max stop loss orders for symbol
+                    max_orders = 10
+                    #if len of max stop loss more than max orders, reply to adjust no_of_orders
+                    if len(prices) > int(max_orders):
+                        await update.message.reply_text('Number of orders exceed maximum, adjust and resubmit again')
+                    #else, for each of the prices, place a stop loss order on the symbol with qty
+                    else:
+                        for price in prices:
+                            price = round(price,2)
+                            trade_result = await binacne_trader_perps.execute_stop_loss(api_key,api_secret,symbol,time_in_force,price,quantity,side)
+                            await update.message.reply_text(trade_result)
+                else:
+                    await update.message.reply_text('Failed to initialize Binance client. Please check your API key and secret.')
+            else:
+                await update.message.reply_text('You haven\'t set your credentials yet. Click on Set Credentials to do so.')
+
         except ValueError:
             await update.message.reply_text(
                 'Invalid format. Please enter trade details in the format:\n' 
